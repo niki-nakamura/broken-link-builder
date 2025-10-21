@@ -1,22 +1,40 @@
-﻿name: broken-link-builder
+﻿name: broken-link-builder (CC+SERP)
+
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: {}            # 手動実行用
   schedule:
-    - cron: "20 15 * * 1" # 毎週月曜 24:20 JST
+    - cron: "20 15 * * 1"          # 毎週 月 24:20 JST（=15:20 UTC）※好みで変更
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: python -m pip install -r requirements.txt
-      - name: Run
+        with:
+          python-version: "3.11"   # 3.11推奨（ホイールが厚い）
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run pipeline
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           VERBOSE: "1"
-          ROWS_LIMIT: "0"
-          FLUSH_EVERY: "5"
-        run: python -u -m src.main
+          ROWS_LIMIT: "0"          # 0=全量。試運転は "10" などに
+          FLUSH_EVERY: "5"         # 5行ごとにシート/CSVへ同期
+        run: |
+          python -u -m src.main | tee run.log
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: broken-link-results
+          path: |
+            outputs/
+            run.log
+          if-no-files-found: ignore
