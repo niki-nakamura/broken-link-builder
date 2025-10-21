@@ -1,0 +1,50 @@
+name: Broken Link Builder
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 18 * * 1,4"   # 毎週 月/木 18:17 UTC （必要に応じ変更）
+  push:
+    paths:
+      - "src/**"
+      - "config.yaml"
+      - "catalog.csv"
+      - ".github/workflows/broken-link-builder.yml"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+      - name: Prepare catalog
+        run: |
+          if [ ! -f catalog.csv ]; then cp catalog.sample.csv catalog.csv; fi
+      - name: Run
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: |
+          python -m src.main
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: broken-link-results
+          path: outputs/
+      # 変更をコミットしたい場合は以下を有効化
+      # - name: Commit outputs back to repo
+      #   run: |
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      #     git add outputs/*.csv outputs/*.md || true
+      #     git commit -m "Update outputs $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
+      #     git push
