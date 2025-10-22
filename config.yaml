@@ -1,38 +1,20 @@
 ﻿own_domain: "digi-mado.jp"
 search_engine: "duckduckgo_lite"
-source_mode: "auto"                # auto | serp | commoncrawl
+source_mode: "commoncrawl"          # まずは CC を優先（後で auto に戻してOK）
 results_per_query: 30
-min_occurrences: 2                 # ★ 本文の出現回数ゲートをCCにも適用
+min_occurrences: 2
 sleep_ms_between_fetches: 2500
 timeout_seconds: 30
 max_workers: 3
 user_agent: "Mozilla/5.0 (compatible; BrokenLinkCI/0.1; +https://digi-mado.jp/)"
-domain_blocklist:
-  - facebook.com
-  - x.com
-  - twitter.com
-  - instagram.com
-  - youtube.com
-  - tiktok.com
-  - pinterest.com
-  - linkedin.com
-soft404_patterns:
-  - "404"
-  - "not found"
-  - "page not found"
-  - "ページが見つかりません"
-  - "お探しのページは"
-  - "存在しません"
+domain_blocklist: [facebook.com, x.com, twitter.com, instagram.com, youtube.com, tiktok.com, pinterest.com, linkedin.com]
+soft404_patterns: ["404","not found","page not found","ページが見つかりません","お探しのページは","存在しません"]
 cc:
-  crawl_id: "CC-MAIN-2025-08"   # 必要に応じて最新へ
-  max_wat_files: 20
-  wat_stride: 4000
-  tld_filter: ".jp"
-  outlinks_per_file: 200
-  min_anchor_chars: 6           # ★ 短すぎるアンカーを除外
-  min_terms_matched: 1          # 2に上げると更に厳格
-  path_exclude_substrings:      # ★ ナビ/検索系を除外
-    - "/search/"
-    - ";jsessionid"
-    - "/dataset/?tags="
-    - "/tag/"
+  crawl_id: "CC-MAIN-2025-08"
+  max_wat_files: 60             # ↑
+  wat_stride: 1500              # ↓
+  tld_filter: ""                # 無効化（=全世界）※後で .jp に戻すときは ".jp"
+  outlinks_per_file: 400
+  min_anchor_chars: 6
+  min_terms_matched: 0          # ← アンカー語一致を任意に
+  path_exclude_substrings: ["/search/",";jsessionid","/dataset/?tags=","/tag/"]

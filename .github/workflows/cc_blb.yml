@@ -1,9 +1,17 @@
 ﻿name: broken-link-builder (CC+SERP)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      rows_limit:   { description: "ROWS_LIMIT (0=all)", default: "10", required: true }
+      source_mode:  { description: "source_mode (commoncrawl|auto|serp)", default: "commoncrawl", required: true }
+      cc_max_wat_files:   { description: "CC_MAX_WAT_FILES", default: "60", required: true }
+      cc_wat_stride:      { description: "CC_WAT_STRIDE", default: "1500", required: true }
+      cc_tld_filter:      { description: "CC_TLD_FILTER (\"\"=no filter)", default: "", required: false }
+      cc_min_terms_matched: { description: "CC_MIN_TERMS_MATCHED", default: "0", required: true }
+
   schedule:
-    - cron: "20 15 * * 1"   # 毎週 月 24:20 JST（=15:20 UTC）好きに変更
+    - cron: "20 15 * * 1"   # 毎週 月 24:20 JST（=15:20 UTC）
 
 jobs:
   run:
@@ -12,8 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        with: { python-version: "3.11" }
 
       - name: Install deps
         run: |
@@ -40,21 +47,24 @@ jobs:
               except Exception:
                   ws = sh.sheet1
               vals = ws.get_all_values()
-              print(f"[OK] Sheet='{ws.title}', rows={len(vals)}")
-              print(f"Head={vals[0] if vals else []}")
+              print(f"[OK] Sheet='{ws.title}', rows={len(vals)}; head={vals[0] if vals else []}")
           except Exception as e:
               print("[NG] Google Sheets connect failed:", e)
               sys.exit(1)
           PY
-
 
       - name: Run pipeline
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           VERBOSE: "1"
-          ROWS_LIMIT: "10"       # 試運転は "10" などに
+          ROWS_LIMIT:  ${{ inputs.rows_limit }}
           FLUSH_EVERY: "5"
+          SOURCE_MODE: ${{ inputs.source_mode }}
+          CC_MAX_WAT_FILES:   ${{ inputs.cc_max_wat_files }}
+          CC_WAT_STRIDE:      ${{ inputs.cc_wat_stride }}
+          CC_TLD_FILTER:      ${{ inputs.cc_tld_filter }}
+          CC_MIN_TERMS_MATCHED: ${{ inputs.cc_min_terms_matched }}
         run: |
           python -u -m src.main | tee run.log
 
