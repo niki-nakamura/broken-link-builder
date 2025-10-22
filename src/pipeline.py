@@ -38,7 +38,37 @@ def load_config(path: str) -> dict:
     conf.setdefault("max_workers", 4)
     conf.setdefault("source_mode", "auto")
     conf.setdefault("cc", {})
+    '
+    # ---- ENV overrides (so we can tweak from Actions inputs) ----
+    env_map = {
+        "SOURCE_MODE": ("source_mode", str),
+        "SEARCH_ENGINE": ("search_engine", str),
+        "RESULTS_PER_QUERY": ("results_per_query", int),
+        "MIN_OCCURRENCES": ("min_occurrences", int),
+    }
+    for k,(ck,cast) in env_map.items():
+        v=os.environ.get(k)
+        if v: conf[ck]=cast(v)
+
+    cc = conf.setdefault("cc", {})
+    cc_map = {
+        "CC_CRAWL_ID": ("crawl_id", str),
+        "CC_MAX_WAT_FILES": ("max_wat_files", int),
+        "CC_WAT_STRIDE": ("wat_stride", int),
+        "CC_TLD_FILTER": ("tld_filter", str),
+        "CC_OUTLINKS_PER_FILE": ("outlinks_per_file", int),
+        "CC_MIN_ANCHOR_CHARS": ("min_anchor_chars", int),
+        "CC_MIN_TERMS_MATCHED": ("min_terms_matched", int),
+    }
+    for k,(ck,cast) in cc_map.items():
+        v=os.environ.get(k)
+        if v is not None:
+            if ck=="tld_filter" and v.lower() in ("", "none", "null"):
+                cc[ck] = ""
+            else:
+                cc[ck]=cast(v)
     return conf
+'
 
 def _read_catalog():
     rows = read_catalog_from_sheet()
