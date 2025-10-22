@@ -20,12 +20,40 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Make outputs dir
+        run: mkdir -p outputs
+
+      - name: Sanity check Google Sheets
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: |
+          python - <<'PY'
+          import os, json, gspread, sys
+          from google.oauth2.service_account import Credentials
+          try:
+              sa = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+              creds = Credentials.from_service_account_info(sa, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+              sh = gspread.authorize(creds).open_by_key(os.environ["GOOGLE_SHEET_ID"])
+              try:
+                  ws = sh.worksheet("カタログ")
+              except Exception:
+                  ws = sh.sheet1
+              vals = ws.get_all_values()
+              print(f"[OK] Sheet='{ws.title}', rows={len(vals)}")
+              print(f"Head={vals[0] if vals else []}")
+          except Exception as e:
+              print("[NG] Google Sheets connect failed:", e)
+              sys.exit(1)
+          PY
+
+
       - name: Run pipeline
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           VERBOSE: "1"
-          ROWS_LIMIT: "0"       # 試運転は "10" などに
+          ROWS_LIMIT: "10"       # 試運転は "10" などに
           FLUSH_EVERY: "5"
         run: |
           python -u -m src.main | tee run.log
