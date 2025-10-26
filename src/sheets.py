@@ -1,64 +1,53 @@
-﻿import os, json
-import gspread
+import os, json, gspread
 from google.oauth2.service_account import Credentials
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# 必要なら config から読み込む作りにしても良いです
+SHEET_NAME_CATALOG   = "カタログ"
+SHEET_NAME_CANDIDATES= "候補URL"
+SHEET_NAME_RESULTS   = "検査結果"
+SHEET_NAME_EXCLUDE   = "除外ログ"
 
-def _open_sheet():
-    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
-    if not sa_json or not sheet_id:
-        return None, None
-    info = json.loads(sa_json)
-    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(sheet_id)
-    return gc, sh
+SCHEMA = {
+    SHEET_NAME_CATALOG:    ["queries_top10_pipe","url","title","clicks_total","first_seen_utc","last_seen_utc","new_flag"],
+    SHEET_NAME_CANDIDATES: ["url","title","source_query","retrieved_at_utc"],
+    SHEET_NAME_RESULTS:    ["page_url","broken_link_url","anchor_text","status","soft_404","replacement_url","fit_score"],
+    SHEET_NAME_EXCLUDE:    ["url","title","source_query","reason","ts"],
+}
 
-def read_catalog_from_sheet():
-    """
-    Googleスプレッドシート『カタログ』を読み、以下のdictリストを返す:
-      {"queries_top10_pipe": <文字列>, "replacement_url": <B列url or replacement_url>}
-    """
-    gc, sh = _open_sheet()
-    if not sh:
-        return []
+def _client():
+    info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+    scopes = ["https://www.googleapis.com/auth/spreadsheets","https://www.googleapis.com/auth/drive"]
+    return gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
+
+def open_book():
+    gc = _client()
+    return gc.open_by_key(os.environ["GOOGLE_SHEET_ID"])
+
+def _get_or_create(sh, title):
     try:
-        ws = sh.worksheet("カタログ")
-    except gspread.WorksheetNotFound:
-        # 念のため先頭シートを使うフォールバック
-        ws = sh.sheet1
-    records = ws.get_all_records()  # 1行目をヘッダーとして辞書化
-    out = []
-    for r in records:
-      q = str(r.get("queries_top10_pipe") or "").strip()
-      # B列の url を優先（なければ replacement_url を使う）
-      repl = str(r.get("url") or r.get("replacement_url") or "").strip()
-      if q:
-          out.append({"queries_top10_pipe": q, "replacement_url": repl})
-    return out
+        ws = sh.worksheet(title)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=title, rows=200, cols=max(10, len(SCHEMA.get(title, []))))
+        if title in SCHEMA:
+            ws.update('1:1', [SCHEMA[title]])
+        return ws
+    need = SCHEMA.get(title)
+    if need and ws.row_values(1)[:len(need)] != need:
+        ws.update('1:1', [need])
+    return ws
 
-def write_table(worksheet_title: str, header: list, rows: list[list], clear: bool = True):
-    """
-    同じスプレッドシート内に、ヘッダー＋行配列を書き込む。
-    存在しなければ新規作成、既存なら clear=True で全消去後に上書き。
-    """
-    gc, sh = _open_sheet()
-    if not sh:
-        return False
-    try:
-        ws = sh.worksheet(worksheet_title)
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=worksheet_title,
-                              rows=max(len(rows)+10, 1000),
-                              cols=max(len(header)+5, 20))
-    if clear:
-        ws.clear()
-    if header:
-        ws.update("A1", [header])
-        if rows:
-            ws.update("A2", rows)
-    else:
-        if rows:
-            ws.update("A1", rows)
-    return True
+def read_catalog(sh):
+    ws = _get_or_create(sh, SHEET_NAME_CATALOG)
+    return ws.get_all_values()
+
+def read_excluded(sh):
+    # まだ運用未定の場合は空集合を返して問題なし
+    return set(), set(), set()
+
+def append_candidates(sh, rows):
+    ws = _get_or_create(sh, SHEET_NAME_CANDIDATES)
+    ws.append_rows(rows, value_input_option="RAW")
+
+def append_results(sh, rows):
+    ws = _get_or_create(sh, SHEET_NAME_RESULTS)
+    ws.append_rows(rows, value_input_option="RAW")
