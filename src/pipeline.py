@@ -19,8 +19,5 @@ def run(discover: bool, scan: bool, suggest: bool, time_budget_min: int):
 
 # OFF:     # 3) 動作確認としてダミー1行を書き込む（※後で消してOK）
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
-# OFF:     append_candidates(sh, [["https://example.com", "Example", "DUMMY", now]])
-# OFF:     append_results(sh, [["https://example.com/page", "https://example.com/broken", "anchor", "404", "0", "https://example.com/fix", "0.50"]])
-# OFF:     print("[BLB] wrote 1 row to 候補URL & 検査結果 (dummy)")
 # OFF: 
     print(f"[BLB] done in {time.time()-t0:.1f}s")
