@@ -1,89 +1,87 @@
-﻿from bs4 import BeautifulSoup
-from urllib.parse import urlencode
-from .utils import rate_limit
-from .parser import is_candidate_url
+import requests, time, random
+from urllib.parse import quote
+from .config import (REQUEST_TIMEOUT, USER_AGENT, CDX_LIMIT_PER_QUERY, CC_LIMIT_PER_QUERY)
+from .filter import early_url_keep
 
-def _uniq_by_url(items):
-    seen=set(); out=[]
-    for it in items:
-        k = it["url"].split("#")[0].split("?")[0]
-        if k in seen: continue
-        seen.add(k); out.append(it)
+HEADERS = {"User-Agent": USER_AGENT}
+FOOTPRINTS = [
+    "links","resources","guide","glossary","dictionary","reference","faq","help",
+    "blog","article","useful","まとめ","一覧","リンク集","おすすめ","用語集","事例","ケーススタディ"
+]
+
+def gen_url_patterns(q: str) -> list[str]:
+    toks = [t for t in q.split("|") if t] if "|" in q else q.split()
+    toks = [t.strip() for t in toks if t.strip()]
+    patterns = set()
+    for token in toks[:3]:
+        for fp in FOOTPRINTS:
+            patterns.add(f"*{token}*{fp}*")
+            patterns.add(f"*{fp}*{token}*")
+    # フットプリントのみも少量
+    for fp in FOOTPRINTS[:6]:
+        patterns.add(f"*{fp}*")
+    return list(patterns)
+
+def fetch_cdx(pattern: str, limit: int) -> list[str]:
+    # Wayback CDX: url= にワイルドカードが使える
+    base = "https://web.archive.org/cdx/search/cdx"
+    params = f"url={quote(pattern, safe='*')}&output=json&fl=original&filter=statuscode:200&filter=mimetype:text/html&limit={limit}"
+    url = f"{base}?{params}"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        js = r.json()
+        # fl=original の場合、各行が ["http..."] 形式
+        urls = [row[0] for row in js if isinstance(row, list) and row]
+        return urls
+    except Exception:
+        return []
+
+def get_cc_indexes() -> list[str]:
+    try:
+        r = requests.get("https://index.commoncrawl.org/collinfo.json", headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        info = r.json()
+        # 新しいものから3個だけ叩く
+        return [x.get("cdx-api") for x in info[:3] if x.get("cdx-api")]
+    except Exception:
+        return []
+
+def fetch_cc(pattern: str, limit: int) -> list[str]:
+    idx_urls = get_cc_indexes()
+    out = []
+    for idx in idx_urls:
+        try:
+            url = f"{idx}?url={quote(pattern, safe='*')}&output=json&limit={limit}"
+            r = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            # NDJSON 形式
+            lines = [ln for ln in r.text.splitlines() if ln.strip()]
+            for ln in lines:
+                try:
+                    rec = requests.json.loads(ln)  # requests.json は無いので修正
+                except Exception:
+                    import json
+                    rec = json.loads(ln)
+                orig = rec.get("url") or rec.get("original") or ""
+                if orig:
+                    out.append(orig)
+        except Exception:
+            continue
+        time.sleep(0.15 + random.random()*0.2)
     return out
 
-def _ddg_lite(session, query, limit, conf):
-    url = "https://lite.duckduckgo.com/lite/?" + urlencode({"q": query, "kl": "jp-jp"})
-    with rate_limit(conf.get("sleep_ms_between_fetches", 0)):
-        r = session.get(url, allow_redirects=True, timeout=conf["timeout_seconds"])
-    if r.status_code >= 400: return []
-    soup = BeautifulSoup(r.text, "html.parser")
-    results=[]
-    for a in soup.find_all("a", href=True):
-        href=a["href"]; title=a.get_text(" ", strip=True)
-        if "duckduckgo.com" in href: continue
-        if not is_candidate_url(href, conf["own_domain"], conf.get("domain_blocklist", [])): continue
-        results.append({"title": title, "url": href})
-        if len(results)>=limit: break
-    return _uniq_by_url(results)
-
-def _ddg_html(session, query, limit, conf):
-    url = "https://html.duckduckgo.com/html/?" + urlencode({"q": query, "kl": "jp-jp"})
-    with rate_limit(conf.get("sleep_ms_between_fetches", 0)):
-        r = session.get(url, allow_redirects=True, timeout=conf["timeout_seconds"])
-    if r.status_code >= 400: return []
-    soup = BeautifulSoup(r.text, "html.parser")
-    results=[]
-    for a in soup.select("a.result__a, a.result__url, a[href]"):
-        href=a.get("href"); title=a.get_text(" ", strip=True)
-        if not href or not title: continue
-        if "duckduckgo.com" in href: continue
-        if not is_candidate_url(href, conf["own_domain"], conf.get("domain_blocklist", [])): continue
-        results.append({"title": title, "url": href})
-        if len(results)>=limit: break
-    return _uniq_by_url(results)
-
-def _mojeek(session, query, limit, conf):
-    url = "https://www.mojeek.com/search?" + urlencode({"q": query, "snh": "1"})
-    with rate_limit(conf.get("sleep_ms_between_fetches", 0)):
-        r = session.get(url, allow_redirects=True, timeout=conf["timeout_seconds"])
-    if r.status_code >= 400: return []
-    soup = BeautifulSoup(r.text, "html.parser")
-    results=[]
-    patterns = [
-        ("a", {"class": lambda v: v and "result-title" in v}),
-        ("h2", {}),
-        ("div", {"class": lambda v: v and "result" in v}),
-    ]
-    for tag, kwargs in patterns:
-        links=[]
-        for node in soup.find_all(tag, **kwargs):
-            a = node if node.name=="a" else node.find("a", href=True)
-            if not a: continue
-            href=a.get("href"); title=a.get_text(" ", strip=True)
-            if not href or not title: continue
-            if not is_candidate_url(href, conf["own_domain"], conf.get("domain_blocklist", [])): continue
-            links.append({"title": title, "url": href})
-            if len(links)>=limit: break
-        if links:
-            results.extend(links)
+def discover_candidates_for_query(query: str, excluded_roots, excluded_hosts, excluded_urls, per_query_cap=200) -> list[str]:
+    patterns = gen_url_patterns(query)
+    pool = set()
+    for p in patterns:
+        for u in fetch_cdx(p, min(CDX_LIMIT_PER_QUERY, per_query_cap//2)):
+            if early_url_keep(u, excluded_roots, excluded_hosts, excluded_urls):
+                pool.add(u)
+        # CC 側
+        for u in fetch_cc(p, min(CC_LIMIT_PER_QUERY, per_query_cap//2)):
+            if early_url_keep(u, excluded_roots, excluded_hosts, excluded_urls):
+                pool.add(u)
+        if len(pool) >= per_query_cap:
             break
-    if not results:
-        for a in soup.find_all("a", href=True):
-            href=a["href"]; title=a.get_text(" ", strip=True)
-            if not href or not title or len(title)<5: continue
-            if not is_candidate_url(href, conf["own_domain"], conf.get("domain_blocklist", [])): continue
-            results.append({"title": title, "url": href})
-            if len(results)>=limit: break
-    return _uniq_by_url(results)
-
-def search_auto(session, query: str, limit: int, conf: dict) -> list[dict]:
-    for fn in (_ddg_lite, _ddg_html, _mojeek):
-        res = fn(session, query, limit, conf)
-        if res: return res
-    return []
-
-def search_duckduckgo_lite(session, query: str, limit: int, conf: dict) -> list[dict]:
-    return _ddg_lite(session, query, limit, conf)
-
-def search_mojeek(session, query: str, limit: int, conf: dict) -> list[dict]:
-    return _mojeek(session, query, limit, conf)
+    return list(pool)

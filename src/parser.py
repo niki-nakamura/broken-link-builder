@@ -1,53 +1,31 @@
-﻿from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import re
 from .utils import normalize_text
 
-TAG_STRIP = re.compile(r"\s+")
-
-def extract_visible_text(html: str) -> str:
+def parse_html(url: str, html: str):
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-    text = soup.get_text(separator=" ")
-    return TAG_STRIP.sub(" ", text).strip()
-
-def extract_anchors(html: str, base_url: str) -> list[dict]:
-    soup = BeautifulSoup(html, "html.parser")
-    out=[]
+    title = normalize_text(soup.title.get_text()) if soup.title else ""
+    heads = []
+    for tag in ["h1","h2","h3"]:
+        for el in soup.find_all(tag):
+            txt = normalize_text(el.get_text(" "))
+            if txt: heads.append(txt)
+    # 外部リンク抽出
+    page_host = (urlparse(url).hostname or "").lower().lstrip("www.")
+    links = []
     for a in soup.find_all("a"):
-        href=a.get("href")
-        if not href or href.startswith(("mailto:","tel:","javascript:","#")): continue
-        abs_url=urljoin(base_url, href)
-        t = TAG_STRIP.sub(" ", a.get_text(" ", strip=True)).strip()
-        if not t: continue
-        out.append({"href": abs_url, "text": t})
-    return out
-
-def count_terms(text: str, terms: list[str]) -> tuple[int, list[str]]:
-    t = normalize_text(text)
-    total=0; matched=[]
-    for term in terms:
-        if not term: continue
-        c = t.count(term)
-        if c>0: matched.append(f"{term}:{c}")
-        total += c
-    return total, matched
-
-def any_term_in(text: str, terms: list[str]) -> bool:
-    t = normalize_text(text)
-    return any(term and term in t for term in terms)
-
-def is_candidate_url(url: str, own_domain: str, domain_blocklist: list[str]) -> bool:
-    try:
-        u = urlparse(url)
-        if u.scheme not in ("http","https"): return False
-        host = u.hostname or ""
-        # 外部のみ対象（自社は除外）
-        if own_domain and own_domain in host: return False
-        # 検索サイト・SNS・ブロック対象は除外
-        if any(b in host for b in (domain_blocklist or [])): return False
-        if "mojeek.com" in host or "duckduckgo.com" in host: return False
-        return True
-    except Exception:
-        return False
+        href = a.get("href")
+        if not href: continue
+        absu = urljoin(url, href)
+        host = (urlparse(absu).hostname or "").lower().lstrip("www.")
+        if not host or host == page_host:  # 内部は除外（BLB用途）
+            continue
+        anchor = normalize_text(a.get_text(" "))
+        links.append((absu, anchor))
+    # 本文（軽く）
+    body_txt = []
+    for p in soup.find_all(["p","li"]):
+        t = normalize_text(p.get_text(" "))
+        if t: body_txt.append(t)
+    body = " ".join(body_txt[:2000])  # 簡易
+    return {"title": title, "heads": heads, "links": links, "body": body}
