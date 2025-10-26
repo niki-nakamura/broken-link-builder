@@ -1,3 +1,18 @@
 ﻿service-account.json
 outputs/
 .venv/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Tools (Gemini CLI / Speckit)
+.gemini/
+.idx/
+.specify/
+
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
