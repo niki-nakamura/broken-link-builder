@@ -1,11 +1,12 @@
-mkdir -p .github/workflows
-cat > .github/workflows/blb-weekly.yml <<'YML'
 name: BLB weekly
 
 on:
   schedule:
-    - cron: '20 15 * * 1'  # 15:20 UTC = JST 00:20 火曜
+    - cron: '20 15 * * 1'   # 15:20 UTC = JST 火曜 00:20
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   run:
@@ -15,10 +16,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install deps
-        run: python -m pip install -U -r requirements.txt
-      - name: Run BLB
-        env:
+      - run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U -r requirements.txt
+      - env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           HTTPS_ONLY: '1'
@@ -28,9 +30,5 @@ jobs:
           PER_DOMAIN_MAX_PER_QUERY: '1'
           REQUEST_TIMEOUT: '12'
         run: |
+          source .venv/bin/activate
           python -m src.main --discover --scan --suggest --time-budget-min 180
-YML
-
-git add .github/workflows/blb-weekly.yml
-git commit -m "ci: weekly BLB run via GitHub Actions (UTC schedule)"
-git push
