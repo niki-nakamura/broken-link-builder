@@ -1,80 +1,54 @@
-import os, re, json, time, random, requests
+import os, json, requests, random, time
+from typing import List
 from .sheets import read_catalog
 
 UA = os.getenv("BLB_UA", "BLB/1.0 (contact: you@example.com)")
 TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "12"))
 CC_INDEX = os.getenv("CC_INDEX", "CC-MAIN-2024-33-index")
 
-def _norm_terms(qpipe: str) -> list[str]:
-    # "A|B|C" 形式から、英数・日本語を含むトークン候補を抽出
-    terms = []
-    for t in (qpipe or "").split("|"):
-        t = t.strip()
-        if not t: continue
-        # URL に載りやすいトークンのみ（空白・記号を削る）
-        t = re.sub(r"[^\w\-/\u3040-\u30ff\u4e00-\u9fff]+", "", t.lower())
-        if len(t) >= 2:
-            terms.append(t)
-    return list(dict.fromkeys(terms))[:5]  # 過剰膨張を抑制
-
-def _cc_query(term: str, limit=10) -> list[str]:
-    u = f"https://index.commoncrawl.org/{CC_INDEX}"
-    p = {"url": f"*{term}*", "output": "json", "limit": str(limit)}
-    r = requests.get(u, params=p, headers={"User-Agent": UA}, timeout=TIMEOUT)
-    r.raise_for_status()
-    urls = []
-    for line in r.text.splitlines():
+def _json_lines(text: str):
+    for line in text.splitlines():
+        line = line.strip()
+        if not line: continue
         try:
-            j = json.loads(line)
-            u = j.get("url") or j.get("urlkey")
-            if u and u.startswith("http"):
-                urls.append(u)
+            yield json.loads(line)
         except Exception:
-            pass
-    return urls
+            continue
 
-def _cdx_query(term: str, limit=10) -> list[str]:
-    u = "https://web.archive.org/cdx/search/cdx"
-    p = {"url": f"*{term}*", "output": "json", "filter": "statuscode:200", "limit": str(limit)}
+def _cc_query(pattern: str, limit: int) -> List[str]:
+    """Common Crawl Index (CDX互換) から https のURLを返す（最少件）。"""
+    u = f"https://index.commoncrawl.org/{CC_INDEX}"
+    p = {"url": pattern, "output": "json", "limit": str(limit)}
     r = requests.get(u, params=p, headers={"User-Agent": UA}, timeout=TIMEOUT)
     r.raise_for_status()
-    js = r.json()
-    # 先頭はヘッダー行、以降は [urlkey, timestamp, original, mimetype, statuscode, digest, length]
     urls = []
-    for row in js[1:]:
-        if len(row) >= 3 and row[2].startswith("http"):
-            urls.append(row[2])
+    for obj in _json_lines(r.text):
+        url = obj.get("url") or ""
+        if url.startswith("https://"):
+            urls.append(url)
     return urls
 
-def discover_candidates(max_queries=50, topk=10) -> list[str]:
-    # 「カタログ」から上位 max_queries 件のクエリ行を読み、各行から URL を少量ずつ取得
-    cat = read_catalog()
-    urls: list[str] = []
-    for i, row in enumerate(cat[:max_queries]):
-        qpipe = row[0] if row else ""
-        terms = _norm_terms(qpipe)
-        pool = set()
-        for t in terms:
-            # CC と CDX から少しずつ
-            try:
-                pool.update(_cc_query(t, limit=5))
-            except Exception:
-                pass
-            time.sleep(0.2 + random.random()*0.3)
-            try:
-                pool.update(_cdx_query(t, limit=5))
-            except Exception:
-                pass
-            time.sleep(0.2 + random.random()*0.3)
-            if len(pool) >= topk * 2:
-                break
-        # そのクエリでの候補を最大 topk 件に絞る
-        urls.extend(list(pool)[:topk])
-        if len(urls) >= max_queries * topk:
-            break
-    # 全体を去重
-    seen, out = set(), []
+def discover_candidates(sh, max_queries: int = 50, topk: int = 10) -> List[str]:
+    """カタログからクエリを取り出し、CC Indexで候補URLを少量ずつ収集（PoC）。"""
+    rows = read_catalog(sh)
+    urls: List[str] = []
+    # シンプルに日本語ヒントありのものを優先しつつ、上位 max_queries 件だけ使う
+    qs = []
+    for r in rows[:max_queries]:
+        qpipe = (r[0] or "").strip()  # queries_top10_pipe
+        if not qpipe: continue
+        # 1クエリにつき代表トークン3つ程度をワイルドカード検索
+        tokens = [t for t in qpipe.split("|") if t.strip()]
+        tokens = tokens[:3]
+        for t in tokens:
+            # 日本語が含まれていれば jp を優先して *.jp/* を叩く
+            patt = "*.jp/*" if any(ord(ch) > 127 for ch in t) else "*/*"
+            # 少量に制限（API礼儀）
+            urls.extend(_cc_query(patt, limit=min(topk, 3)))
+            time.sleep(0.3)  # 優しめに
+    # 去重
+    seen, dedup = set(), []
     for u in urls:
-        if u not in seen:
-            seen.add(u); out.append(u)
-    return out
+        if u in seen: continue
+        seen.add(u); dedup.append(u)
+    return dedup

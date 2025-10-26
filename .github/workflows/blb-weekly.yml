@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: '20 15 * * 1'   # 15:20 UTC = JST 00:20 Tue
   workflow_dispatch:
+  repository_dispatch:
+    types: [blb_run]
 
 jobs:
   run:
