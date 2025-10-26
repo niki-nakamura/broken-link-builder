@@ -2,15 +2,14 @@ name: BLB weekly
 
 on:
   schedule:
-    - cron: '20 15 * * 1'   # 15:20 UTC = JST 火曜 00:20
+    - cron: '20 15 * * 1'   # 15:20 UTC = JST 00:20 Tue
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,17 +17,18 @@ jobs:
           python-version: '3.12'
       - run: |
           python -m venv .venv
-          source .venv/bin/activate
+          . .venv/bin/activate
           pip install -U -r requirements.txt
-      - env:
+      - name: Run BLB
+        env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           HTTPS_ONLY: '1'
           FREE_INCLUDE_COM_IN_JA: '1'
           TOPK_PER_QUERY: '10'
-          MAX_QUERIES: '200'
-          PER_DOMAIN_MAX_PER_QUERY: '1'
+          MAX_QUERIES: '50'
+          PER_DOMAIN_MAX_PER_QUERY: '2'
           REQUEST_TIMEOUT: '12'
         run: |
-          source .venv/bin/activate
-          python -m src.main --discover --scan --suggest --time-budget-min 180
+          . .venv/bin/activate
+          python -m src.main --discover --scan --suggest --time-budget-min 45
