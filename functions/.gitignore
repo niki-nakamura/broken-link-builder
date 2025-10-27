@@ -1,2 +1,9 @@
 node_modules/
-*.local
+*.local__pycache__/
+*.py[cod]
+.venv/
+.gemini/
+.idx/
+.specify/
+.firebase/
+functions/
