@@ -1,26 +1,37 @@
-name: BLB weekly
+# 既存 weekly を daily に置き換え（ファイル名はそのままでもOK）
+cat > .github/workflows/blb-weekly.yml <<'YML'
+name: BLB daily
 
 on:
   schedule:
-    - cron: '20 15 * * 1'   # 15:20 UTC = JST 00:20 Tue
-  workflow_dispatch:
-  repository_dispatch:
-    types: [blb_run]
+    - cron: '5 22 * * *'   # 22:05 UTC = JST 07:05 daily
+  workflow_dispatch:        # 画面ボタン用（PAT不要で手押し起動可能）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blb-daily
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: |
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
           python -m venv .venv
           . .venv/bin/activate
           pip install -U -r requirements.txt
+
       - name: Run BLB
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -28,9 +39,14 @@ jobs:
           HTTPS_ONLY: '1'
           FREE_INCLUDE_COM_IN_JA: '1'
           TOPK_PER_QUERY: '10'
-          MAX_QUERIES: '50'
-          PER_DOMAIN_MAX_PER_QUERY: '2'
+          MAX_QUERIES: '200'
+          PER_DOMAIN_MAX_PER_QUERY: '1'
           REQUEST_TIMEOUT: '12'
         run: |
           . .venv/bin/activate
-          python -m src.main --discover --scan --suggest --time-budget-min 45
+          python -m src.main --discover --scan --suggest --time-budget-min 180
+YML
+
+git add .github/workflows/blb-weekly.yml
+git commit -m "ci: run BLB daily at 07:05 JST and allow manual dispatch"
+git push
