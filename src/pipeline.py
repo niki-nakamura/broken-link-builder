@@ -22,7 +22,7 @@ def run(do_discover: bool=True, do_scan: bool=True, do_suggest: bool=True, time_
     # --- Discover (CC/CDX)
     discovered = []
     per_host = {}
-    for page_url, title, source_query in discover_candidates(sh, MAX_QUERIES, TOPK):
+    for page_url, title, source_query in discover_candidates(sh, sh, MAX_QUERIES, TOPK):
         ok, reason = pre_http_filter(page_url)
         if not ok:
             continue
