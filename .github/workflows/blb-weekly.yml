@@ -4,8 +4,8 @@ name: BLB daily
 
 on:
   schedule:
-    - cron: '5 22 * * *'   # 22:05 UTC = JST 07:05 daily
-  workflow_dispatch:        # 画面ボタン用（PAT不要で手押し起動可能）
+    - cron: '5 22 * * *'   # 22:05 UTC = 07:05 JST
+  workflow_dispatch:        # 手動ボタンも残す
 
 permissions:
   contents: read
