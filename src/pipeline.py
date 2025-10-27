@@ -13,7 +13,7 @@ PER_DOMAIN_MAX_PER_QUERY = int(os.getenv("PER_DOMAIN_MAX_PER_QUERY","1"))
 def _host(u: str) -> str:
     return urllib.parse.urlparse(u).netloc
 
-def run():
+def run(do_discover: bool=True, do_scan: bool=True, do_suggest: bool=True, time_budget_min: int=180):
     t0 = time.time()
     sh = open_sheet()
     cat = read_catalog(sh)  # A:G
