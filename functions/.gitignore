@@ -1,9 +1,0 @@
-node_modules/
-*.local__pycache__/
-*.py[cod]
-.venv/
-.gemini/
-.idx/
-.specify/
-.firebase/
-functions/
